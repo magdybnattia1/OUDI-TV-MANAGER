@@ -115,7 +115,7 @@ private fun OudiManager(context: Context) {
                     Button(onClick = { action { OudiAdbClient.installHome(context, ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("تثبيت OUDI HOME على التلفزيون")
                     }
-                    Button(onClick = { action { OudiAdbClient.openHome(ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { action { OudiAdbClient.openHome(context, ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("تشغيل OUDI HOME للتجربة")
                     }
                 }
@@ -125,7 +125,7 @@ private fun OudiManager(context: Context) {
                 Column(Modifier.padding(14.dp)) {
                     Text("3 • الرجوع للواجهة الأصلية", color = Gold, fontWeight = FontWeight.Bold)
                     Text("يمسح اختيار OUDI كواجهة افتراضية ويعرض اختيار واجهة الشاشة من جديد.", color = Color.White, fontSize = 13.sp)
-                    OutlinedButton(onClick = { action { OudiAdbClient.restoreHome(ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { action { OudiAdbClient.restoreHome(context, ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("إلغاء اختيار OUDI HOME")
                     }
                 }
