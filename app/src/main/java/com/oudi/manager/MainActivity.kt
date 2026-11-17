@@ -40,112 +40,100 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun OudiManager(context: Context) {
-    var ip by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("جاهز للبحث عن تلفزيونك") }
+    var ip by remember { mutableStateOf("192.168.1.2") }
+    var status by remember { mutableStateOf("جاهز للاتصال") }
     var scanning by remember { mutableStateOf(false) }
-    var connecting by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var found by remember { mutableStateOf(listOf<String>()) }
-    var connected by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    fun action(work: suspend () -> String) {
+        if (busy || ip.isBlank()) return
+        busy = true
+        scope.launch {
+            status = "جاري التنفيذ…"
+            val result = withContext(Dispatchers.IO) { runCatching { work() } }
+            status = result.getOrElse { it.message ?: "فشلت العملية" }
+            busy = false
+        }
+    }
 
     fun scan() {
         scanning = true
-        connected = false
-        status = "جاري فحص الشبكة المحلية بحثاً عن ADB…"
-        found = emptyList()
         scope.launch {
             val candidates = withContext(Dispatchers.IO) {
                 val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                @Suppress("DEPRECATION")
-                val dhcp = wifi.dhcpInfo
+                @Suppress("DEPRECATION") val dhcp = wifi.dhcpInfo
                 if (dhcp == null || dhcp.ipAddress == 0) emptyList() else {
-                    val ipInt = dhcp.ipAddress
-                    val mask = dhcp.netmask
-                    val network = ipInt and mask
-                    val broadcast = network or mask.inv()
-                    val prefix = (network.toLong() and 0xffffffffL)
-                    (1..254).mapNotNull { host ->
-                        val address = (prefix + host).toInt()
-                        if (address == ipInt) null else ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(address).array().joinToString(".") { (it.toInt() and 0xff).toString() }
-                    }.takeIf { (broadcast - network) > 2 } ?: emptyList()
+                    val local = dhcp.ipAddress
+                    val network = local and dhcp.netmask
+                    (1..254).mapNotNull { n ->
+                        val a = (network.toLong() and 0xffffffffL) + n
+                        val addr = a.toInt()
+                        if (addr == local) null else ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
+                            .putInt(addr).array().joinToString(".") { (it.toInt() and 255).toString() }
+                    }
                 }
             }
-            if (candidates.isEmpty()) {
-                scanning = false
-                status = "تعذر قراءة شبكة Wi‑Fi. أدخل IP التلفزيون يدوياً."
-                return@launch
-            }
             val gate = Semaphore(24)
-            val reachable = candidates.map { host -> async(Dispatchers.IO) {
+            found = candidates.map { host -> async(Dispatchers.IO) {
                 gate.acquire()
-                try {
-                    Socket().use { it.connect(InetSocketAddress(host, 5555), 450) }
-                    host
-                } catch (_: Exception) { null }
+                try { Socket().use { it.connect(InetSocketAddress(host, 5555), 450) }; host }
+                catch (_: Exception) { null }
                 finally { gate.release() }
             } }.awaitAll().filterNotNull().distinct()
-            found = reachable
             scanning = false
-            if (reachable.isEmpty()) status = "لم نعثر على ADB على المنفذ 5555. جرّب إدخال IP يدوياً وتأكد من تفعيل تصحيح ADB عبر الشبكة."
-            else {
-                status = "عُثر على ${reachable.size} جهاز يستجيب على منفذ ADB. اختر تلفزيون Tornado."
-                if (ip.isBlank()) ip = reachable.first()
-            }
+            status = if (found.isEmpty()) "لم يتم العثور على جهاز؛ أدخل IP يدوياً" else "اختر التلفزيون من القائمة"
+            if (found.isNotEmpty()) ip = found.first()
         }
     }
 
     MaterialTheme(colorScheme = darkColorScheme(primary = Gold, background = Ink, surface = Panel)) {
-        Column(Modifier.fillMaxSize().background(Ink).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(18.dp))
+        Column(Modifier.fillMaxSize().background(Ink).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("OUDI", color = Gold, fontSize = 34.sp, fontWeight = FontWeight.Black)
             Text("TV MANAGER", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text("إدارة تلفزيونك من الموبايل", color = Color.LightGray, modifier = Modifier.padding(top = 6.dp))
-            Spacer(Modifier.height(26.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.padding(18.dp)) {
-                    Text("1  •  اكتشاف التلفزيون", color = Gold, fontWeight = FontWeight.Bold)
-                    Text("وصّل الموبايل والتلفزيون على نفس شبكة Wi‑Fi. يبحث التطبيق عن الأجهزة التي تستجيب على منفذ ADB 5555.", color = Color.White, modifier = Modifier.padding(top = 8.dp))
-                    Button(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text(if (scanning) "جاري البحث…" else "ابحث عن التلفزيونات") }
-                    if (found.isNotEmpty()) {
-                        found.forEach { host -> TextButton(onClick = { ip = host }) { Text("اختيار $host", color = Gold) } }
+            Text("إدارة تلفزيونك من الموبايل", color = Color.LightGray)
+            Spacer(Modifier.height(12.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("1 • الاتصال بالتلفزيون", color = Gold, fontWeight = FontWeight.Bold)
+                    Button(onClick = { scan() }, enabled = !scanning && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (scanning) "جاري البحث…" else "ابحث عن التلفزيون")
+                    }
+                    found.forEach { host -> TextButton(onClick = { ip = host }) { Text(host, color = Gold) } }
+                    OutlinedTextField(value = ip, onValueChange = { ip = it }, label = { Text("IP التلفزيون") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Button(onClick = { action { OudiAdbClient.connectAndVerify(context, ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("اختبار الاتصال")
                     }
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.padding(18.dp)) {
-                    Text("2  •  الاتصال", color = Gold, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = ip, onValueChange = { ip = it }, label = { Text("عنوان IP للتلفزيون") }, placeholder = { Text("مثال: 192.168.1.25") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Button(onClick = {
-                        connecting = true; connected = false
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching { OudiAdbClient.connectAndVerify(context, ip.trim(), 5555) }
-                            }
-                            connecting = false
-                            connected = result.isSuccess
-                            status = result.getOrElse { error ->
-                                when {
-                                    error.message?.contains("مصادقة") == true -> error.message ?: "تعذر إتمام مصادقة ADB."
-                                    error is java.net.ConnectException -> "منفذ ADB 5555 غير متاح. فعّل تصحيح ADB عبر الشبكة في التلفزيون."
-                                    else -> error.message ?: "فشل اتصال ADB."
-                                }
-                            }
-                        }
-                    }, enabled = ip.isNotBlank() && !connecting, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text(if (connecting) "جاري الاتصال…" else "اختبار الاتصال") }
+            Spacer(Modifier.height(10.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("2 • تثبيت وتشغيل OUDI HOME", color = Gold, fontWeight = FontWeight.Bold)
+                    Text("ينقل التطبيق المثبت على الموبايل إلى التلفزيون. الواجهة الأصلية لن تُحذف.", color = Color.White, fontSize = 13.sp)
+                    Button(onClick = { action { OudiAdbClient.installHome(context, ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("تثبيت OUDI HOME على التلفزيون")
+                    }
+                    Button(onClick = { action { OudiAdbClient.openHome(ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("تشغيل OUDI HOME للتجربة")
+                    }
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(18.dp)) {
-                    Text("3  •  تجهيز OUDI", color = Gold, fontWeight = FontWeight.Bold)
-                    Text("حالة الاتصال: $status", color = Color.White, modifier = Modifier.padding(top = 8.dp))
-                    if (connected) Text("تم الوصول إلى منفذ ADB فقط. يلزم إتمام مصادقة ADB قبل إرسال أي أمر.", color = Gold, modifier = Modifier.padding(top = 8.dp))
-                    Text("تم تفعيل اتصال ADB بالمصادقة ومفتاح محفوظ على الموبايل. تثبيت OUDI HOME وتغيير الواجهة يحتاجان خطوة تطوير واختبار منفصلة.", color = Color.LightGray, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            Spacer(Modifier.height(10.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("3 • الرجوع للواجهة الأصلية", color = Gold, fontWeight = FontWeight.Bold)
+                    Text("يمسح اختيار OUDI كواجهة افتراضية ويعرض اختيار واجهة الشاشة من جديد.", color = Color.White, fontSize = 13.sp)
+                    OutlinedButton(onClick = { action { OudiAdbClient.restoreHome(ip.trim()) } }, enabled = ip.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("إلغاء اختيار OUDI HOME")
+                    }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text("الحالة: $status", color = Gold, fontSize = 12.sp)
             Spacer(Modifier.weight(1f))
-            Text("OUDI • إصدار تجريبي 0.3.1", color = Color.Gray, fontSize = 11.sp)
+            Text("OUDI • إصدار تجريبي", color = Color.Gray, fontSize = 11.sp)
         }
     }
 }
