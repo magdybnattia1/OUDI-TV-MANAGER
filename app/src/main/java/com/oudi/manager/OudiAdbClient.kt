@@ -121,18 +121,15 @@ object OudiAdbClient {
         return "تم تثبيت OUDI HOME على التلفزيون بنجاح. الواجهة الأصلية ما زالت كما هي."
     }
 
-    fun openHome(host: String): String {
-        val result = shellWithoutContext(host, "am start -n com.oudi.manager/.OudiHomeActivity")
+    fun openHome(context: Context, host: String): String {
+        val result = shell(context, host, "am start -n com.oudi.manager/.OudiHomeActivity")
         if (result.contains("Error", true) || result.contains("Exception", true)) throw IOException(result)
         return "تم إرسال أمر تشغيل OUDI HOME. افحص الشاشة."
     }
 
-    fun restoreHome(host: String): String {
-        val result = shellWithoutContext(host, "cmd package clear-package-preferred-activities com.oudi.manager; am start -a android.intent.action.MAIN -c android.intent.category.HOME")
+    fun restoreHome(context: Context, host: String): String {
+        val result = shell(context, host, "cmd package clear-package-preferred-activities com.oudi.manager; am start -a android.intent.action.MAIN -c android.intent.category.HOME")
         return "تم إلغاء تفضيل OUDI. اختر واجهة التلفزيون الأصلية من شاشة الاختيار إن ظهرت. $result"
     }
 
-    private fun shellWithoutContext(host: String, command: String): String {
-        throw IOException("يلزم إعادة استخدام مفتاح ADB المحفوظ؛ افتح الإجراء من التطبيق بعد إتمام الاتصال.")
-    }
 }
