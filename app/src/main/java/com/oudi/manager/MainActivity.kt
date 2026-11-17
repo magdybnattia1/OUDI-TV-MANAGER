@@ -119,11 +119,18 @@ private fun OudiManager(context: Context) {
                     Button(onClick = {
                         connecting = true; connected = false
                         scope.launch {
-                            val ok = withContext(Dispatchers.IO) {
-                                try { Socket().use { it.connect(InetSocketAddress(ip.trim(), 5555), 2500) }; true } catch (_: Exception) { false }
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { OudiAdbClient.connectAndVerify(context, ip.trim(), 5555) }
                             }
-                            connecting = false; connected = ok
-                            status = if (ok) "منفذ ADB يستجيب. الخطوة التالية تتطلب مصادقة ADB من التلفزيون." else "لم يتم الوصول إلى منفذ ADB 5555. فعّل Network ADB من إعدادات التلفزيون وتأكد من نفس الشبكة."
+                            connecting = false
+                            connected = result.isSuccess
+                            status = result.getOrElse { error ->
+                                when {
+                                    error.message?.contains("مصادقة") == true -> error.message ?: "تعذر إتمام مصادقة ADB."
+                                    error is java.net.ConnectException -> "منفذ ADB 5555 غير متاح. فعّل تصحيح ADB عبر الشبكة في التلفزيون."
+                                    else -> error.message ?: "فشل اتصال ADB."
+                                }
+                            }
                         }
                     }, enabled = ip.isNotBlank() && !connecting, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text(if (connecting) "جاري الاتصال…" else "اختبار الاتصال") }
                 }
@@ -134,11 +141,11 @@ private fun OudiManager(context: Context) {
                     Text("3  •  تجهيز OUDI", color = Gold, fontWeight = FontWeight.Bold)
                     Text("حالة الاتصال: $status", color = Color.White, modifier = Modifier.padding(top = 8.dp))
                     if (connected) Text("تم الوصول إلى منفذ ADB فقط. يلزم إتمام مصادقة ADB قبل إرسال أي أمر.", color = Gold, modifier = Modifier.padding(top = 8.dp))
-                    Text("هذه نسخة فحص اتصال فقط: لا تثبّت تطبيقات ولا تغيّر الواجهة الرئيسية بعد. سنضيف محرك ADB موثوقاً وخطة استعادة قبل تنفيذ التغييرات.", color = Color.LightGray, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                    Text("تم تفعيل اتصال ADB بالمصادقة ومفتاح محفوظ على الموبايل. تثبيت OUDI HOME وتغيير الواجهة يحتاجان خطوة تطوير واختبار منفصلة.", color = Color.LightGray, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text("OUDI • إصدار تجريبي 0.2.0", color = Color.Gray, fontSize = 11.sp)
+            Text("OUDI • إصدار تجريبي 0.3.1", color = Color.Gray, fontSize = 11.sp)
         }
     }
 }
